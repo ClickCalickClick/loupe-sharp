@@ -12,6 +12,12 @@ I checked that what ends up on screen matches the resampled image pixel for pixe
 
 *A zone plate test pattern shown fit-to-window. Left: stock Loupe 50.0. Right: this fork. The rings get finer towards the edge. Past the point the screen can show, the correct result is plain grey. Stock Loupe blurs the visible rings early and adds false ring patterns; the fork keeps them crisp and then goes cleanly grey.*
 
+![In-focus grass from a 60 MP photo, stock Loupe on the left, this fork on the right](docs/photo-comparison.png)
+
+*A crop of in-focus grass from a 60 MP photo at fit-to-window, enlarged 2× so the pixels are visible. Left: stock Loupe 50.0. Right: this fork.*
+
+Both images were captured inside Loupe with the window's own renderer, once with the normal path and once with the resampled texture, so the only difference is the downscaling.
+
 Everything else (decoding via glycin, colour management, gestures, editing, the interface) is Loupe as upstream ships it. Credit for all of that goes to the Loupe developers. The change itself is one file, [`src/widgets/image/sharp.rs`](src/widgets/image/sharp.rs), plus a few small hooks.
 
 ## Install (Arch / CachyOS)
