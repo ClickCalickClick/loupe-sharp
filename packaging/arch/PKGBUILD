@@ -1,0 +1,36 @@
+# Loupe (GNOME Image Viewer) with high quality Lanczos3 downscaling.
+# Source: https://github.com/ClickCalickClick/loupe-sharp (branch sharp-downscale)
+
+pkgname=loupe-sharp
+pkgver=50.0.r2.f7c952f
+pkgrel=1
+pkgdesc="GNOME Image Viewer (Loupe) with sharp, pixel-exact downscaling of large photos"
+arch=(x86_64)
+url="https://github.com/ClickCalickClick/loupe-sharp"
+license=(GPL-3.0-or-later)
+depends=(bubblewrap cairo dconf fontconfig glib2 glibc glycin graphene gtk4
+         hicolor-icon-theme lcms2 libadwaita libgcc libgweather-4 libseccomp)
+makedepends=(git meson itstool appstream desktop-file-utils)
+provides=("loupe=$pkgver")
+conflicts=(loupe)
+options=(!lto)  # Cargo profile already uses LTO
+source=("loupe::git+https://github.com/ClickCalickClick/loupe-sharp.git#branch=sharp-downscale")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd loupe
+  printf "%s.r%s.%s" "$(git describe --tags --abbrev=0)" \
+    "$(git rev-list --count "$(git describe --tags --abbrev=0)"..HEAD)" \
+    "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  # Use the user's rustup toolchain if no system cargo is installed
+  export PATH="$PATH:$HOME/.cargo/bin"
+  arch-meson loupe build
+  meson compile -C build
+}
+
+package() {
+  meson install -C build --destdir "$pkgdir"
+}
