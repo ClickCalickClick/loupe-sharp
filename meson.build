@@ -46,7 +46,9 @@ datadir = prefix / get_option('datadir')
 pkgdatadir = datadir / meson.project_name()
 
 subdir('data')
-subdir('help')
+if find_program('itstool', required: false).found()
+  subdir('help')
+endif
 subdir('src')
 subdir('po')
 
