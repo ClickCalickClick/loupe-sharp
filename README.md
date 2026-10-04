@@ -4,7 +4,7 @@ This is a small fork of [Loupe](https://gitlab.gnome.org/GNOME/loupe), GNOME's I
 
 **Why:** I shoot 60 MP photos, and when Loupe fits one to the window, edges like hair, eyelashes and fabric come out soft but still a bit jagged. Loupe hands the full-resolution image to the GPU and lets mipmaps do the shrinking. That's fast, but mipmaps only step down in halves, so a ratio like 1:3.7 lands between two levels.
 
-**What this fork does:** once the zoom stops changing (about 0.1 s), it resamples the full image on the CPU with a Lanczos3 filter to exactly the number of physical screen pixels it covers, and then draws that 1:1 with no further scaling. While you're zooming, the normal GPU path is used, so it stays smooth. On a 60 MP JPEG the resample takes roughly 0.04–0.17 s, in the background.
+**What this fork does:** once the zoom stops changing (about 0.1 s), it resamples the full image on the CPU with a Lanczos3 filter to exactly the number of physical screen pixels it covers, and then draws that 1:1 with no further scaling. While you're zooming, the normal GPU path is used, so it stays smooth. It reads the decoder's pixel buffer in place, in the image's own format and colour space (8-bit, 16-bit or floating point), so it needs no extra memory. A 60 MP JPEG takes about 20 ms, in the background.
 
 I checked that what ends up on screen matches the resampled image pixel for pixel, including with fractional scaling (167%), EXIF rotation and mirroring.
 
