@@ -51,6 +51,15 @@ pub struct Tile {
     /// Border that gets cut away to avoid scaling artifacts at the sides
     pub bleed: u8,
     pub texture: gdk::Texture,
+    /// Decoded pixels backing `texture`, shared without copying
+    pub source: Option<SourcePixels>,
+}
+
+#[derive(Clone, Debug)]
+/// Pixel buffer of a texture as delivered by the decoder
+pub struct SourcePixels {
+    pub bytes: glib::Bytes,
+    pub stride: usize,
 }
 
 /// Temporary function until HighDPI is sorted out
@@ -184,7 +193,7 @@ impl FrameBuffer {
     }
 
     /// Full resolution texture of a static image consisting of a single tile
-    pub fn single_full_texture(&self) -> Option<gdk::Texture> {
+    pub fn single_full_texture(&self) -> Option<(gdk::Texture, Option<SourcePixels>)> {
         if self.images.len() != 1 {
             return None;
         }
@@ -206,7 +215,7 @@ impl FrameBuffer {
             && tile.texture.width() as u32 == width
             && tile.texture.height() as u32 == height;
 
-        complete.then(|| tile.texture.clone())
+        complete.then(|| (tile.texture.clone(), tile.source.clone()))
     }
 
     /// Returns true if there are no textures
@@ -282,6 +291,7 @@ impl TiledImage {
             texture,
             zoom_level: zoom_to_level(tiling.zoom),
             bleed: tiling.bleed,
+            source: None,
         };
 
         let layer = self

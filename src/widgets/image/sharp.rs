@@ -35,13 +35,21 @@ use super::*;
 const SETTLE_DELAY: Duration = Duration::from_millis(120);
 
 /// Identifies what a sharp render was produced for
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct SharpKey {
     /// Full resolution texture the render is based on
     source: gdk::Texture,
+    /// Decoded pixels of `source`, if available without copying
+    pixels: Option<tiling::SourcePixels>,
     /// Physical pixel size of the render
     width: u32,
     height: u32,
+}
+
+impl PartialEq for SharpKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.source == other.source && self.width == other.width && self.height == other.height
+    }
 }
 
 #[derive(Debug)]
@@ -64,10 +72,7 @@ impl imp::LpImage {
             return None;
         }
 
-        let source = frame_buffer.single_full_texture()?;
-        if !sharp_supported_format(source.format()) {
-            return None;
-        }
+        let (source, pixels) = frame_buffer.single_full_texture()?;
 
         // Zoom in physical pixels
         let zoom = tiling::zoom_normalize(obj.zoom());
@@ -83,6 +88,7 @@ impl imp::LpImage {
 
         Some(SharpKey {
             source,
+            pixels,
             width,
             height,
         })
@@ -167,9 +173,7 @@ impl imp::LpImage {
             async move {
                 let job_key = key.clone();
                 let start = std::time::Instant::now();
-                let result =
-                    gio::spawn_blocking(move || resample(&job_key.source, job_key.width, job_key.height))
-                        .await;
+                let result = gio::spawn_blocking(move || resample(&job_key)).await;
 
                 if imp.sharp_pending.borrow().as_ref() == Some(&key) {
                     imp.sharp_pending.replace(None);
@@ -219,8 +223,7 @@ impl imp::LpImage {
             .add_to_snapshot(&snapshot, self.applicable_zoom(), &options);
 
         if let Some(node) = snapshot.to_node() {
-            let viewport =
-                graphene::Rect::new(0., 0., sharp.width() as f32, sharp.height() as f32);
+            let viewport = graphene::Rect::new(0., 0., sharp.width() as f32, sharp.height() as f32);
             let gpu = renderer.render_texture(node, Some(&viewport));
             let _ = gpu.save_to_png(dir.join("gpu-trilinear.png"));
         }
@@ -246,8 +249,11 @@ impl imp::LpImage {
 
         if let Some(node) = snapshot.to_node() {
             let viewport = graphene::Rect::new(0., 0., width * scaling, height * scaling);
-            let path = std::path::Path::new(&dir).join(format!("widget-{}.png", obj.basename().unwrap_or_default()));
-            let _ = renderer.render_texture(node, Some(&viewport)).save_to_png(&path);
+            let path = std::path::Path::new(&dir)
+                .join(format!("widget-{}.png", obj.basename().unwrap_or_default()));
+            let _ = renderer
+                .render_texture(node, Some(&viewport))
+                .save_to_png(&path);
             tracing::info!("Saved widget render to {}", path.display());
         }
     }
@@ -262,86 +268,147 @@ impl imp::LpImage {
     }
 }
 
-fn sharp_supported_format(format: gdk::MemoryFormat) -> bool {
-    !matches!(
-        format,
-        gdk::MemoryFormat::R16g16b16Float
-            | gdk::MemoryFormat::R16g16b16a16FloatPremultiplied
-            | gdk::MemoryFormat::R16g16b16a16Float
-            | gdk::MemoryFormat::R32g32b32Float
-            | gdk::MemoryFormat::R32g32b32a32FloatPremultiplied
-            | gdk::MemoryFormat::R32g32b32a32Float
-    )
-}
-
-fn is_high_bit_depth(format: gdk::MemoryFormat) -> bool {
-    matches!(
-        format,
-        gdk::MemoryFormat::R16g16b16
-            | gdk::MemoryFormat::R16g16b16a16Premultiplied
-            | gdk::MemoryFormat::R16g16b16a16
-            | gdk::MemoryFormat::G16
-            | gdk::MemoryFormat::G16a16
-            | gdk::MemoryFormat::G16a16Premultiplied
-            | gdk::MemoryFormat::A16
-    )
-}
-
-/// Resample texture to `width` x `height` with Lanczos3
+/// How the resizer has to treat a memory format
 ///
-/// Works on premultiplied data such that transparent areas do not bleed.
-/// Runs in a worker thread.
-fn resample(source: &gdk::Texture, width: u32, height: u32) -> anyhow::Result<gdk::Texture> {
-    let (format, pixel_type, bpp) = if is_high_bit_depth(source.format()) {
-        (
-            gdk::MemoryFormat::R16g16b16a16Premultiplied,
-            fr::PixelType::U16x4,
-            8,
-        )
-    } else {
-        (
-            gdk::MemoryFormat::R8g8b8a8Premultiplied,
-            fr::PixelType::U8x4,
-            4,
-        )
-    };
+/// Returns the pixel type and whether the alpha channel is unpremultiplied
+/// and last. `None` if the format can't be resized as is.
+fn resize_layout(format: gdk::MemoryFormat) -> Option<(fr::PixelType, bool)> {
+    use fr::PixelType::*;
+    use gdk::MemoryFormat as F;
 
+    Some(match format {
+        F::B8g8r8a8Premultiplied
+        | F::A8r8g8b8Premultiplied
+        | F::R8g8b8a8Premultiplied
+        | F::A8b8g8r8Premultiplied
+        | F::B8g8r8x8
+        | F::X8r8g8b8
+        | F::R8g8b8x8
+        | F::X8b8g8r8 => (U8x4, false),
+        F::B8g8r8a8 | F::R8g8b8a8 => (U8x4, true),
+        F::R8g8b8 | F::B8g8r8 => (U8x3, false),
+        F::G8 | F::A8 => (U8, false),
+        F::G8a8Premultiplied => (U8x2, false),
+        F::G8a8 => (U8x2, true),
+        F::R16g16b16 => (U16x3, false),
+        F::R16g16b16a16Premultiplied => (U16x4, false),
+        F::R16g16b16a16 => (U16x4, true),
+        F::G16 | F::A16 => (U16, false),
+        F::G16a16Premultiplied => (U16x2, false),
+        F::G16a16 => (U16x2, true),
+        F::R32g32b32Float => (F32x3, false),
+        F::R32g32b32a32FloatPremultiplied => (F32x4, false),
+        F::R32g32b32a32Float => (F32x4, true),
+        F::A32Float => (F32, false),
+        // Half floats and alpha-first straight alpha
+        _ => return None,
+    })
+}
+
+/// Resample the image to the key's size with Lanczos3
+///
+/// The output keeps the source's memory format and color state, such that
+/// GTK's color handling is the same as for the original texture. If the
+/// decoder's buffer is available, it's read in place without a copy.
+/// Runs in a worker thread.
+fn resample(key: &SharpKey) -> anyhow::Result<gdk::Texture> {
+    let source = &key.source;
     let src_width = source.width() as u32;
     let src_height = source.height() as u32;
+    let color_state = source.color_state();
 
-    let mut downloader = gdk::TextureDownloader::new(source);
-    downloader.set_format(format);
-    let (bytes, stride) = downloader.download_bytes();
+    let direct = key
+        .pixels
+        .as_ref()
+        .and_then(|pixels| Some((pixels, resize_layout(source.format())?)));
 
-    let row = src_width as usize * bpp;
-    let packed;
-    let src_data: &[u8] = if stride == row {
-        &bytes
-    } else {
-        packed = bytes
-            .chunks(stride)
-            .flat_map(|x| &x[..row])
-            .copied()
-            .collect::<Vec<u8>>();
-        &packed
-    };
+    let downloaded;
+    let (bytes, stride, format, pixel_type, unpremultiplied): (&[u8], usize, _, _, _) =
+        if let Some((pixels, (pixel_type, unpremultiplied))) = direct {
+            (
+                &pixels.bytes,
+                pixels.stride,
+                source.format(),
+                pixel_type,
+                unpremultiplied,
+            )
+        } else {
+            // Rare formats: convert to float, keeping the color state
+            let format = gdk::MemoryFormat::R32g32b32a32FloatPremultiplied;
+            let mut downloader = gdk::TextureDownloader::new(source);
+            downloader.set_format(format);
+            downloader.set_color_state(&color_state);
+            let (bytes, stride) = downloader.download_bytes();
+            downloaded = bytes;
+            (&downloaded, stride, format, fr::PixelType::F32x4, false)
+        };
 
-    let src = fr::images::ImageRef::new(src_width, src_height, src_data, pixel_type)?;
-    let mut dst = fr::images::Image::new(width, height, pixel_type);
+    let row = src_width as usize * pixel_type.size();
+    let rows = (src_height as usize - 1) * stride + row;
+    anyhow::ensure!(bytes.len() >= rows, "Pixel buffer too small");
 
+    let mut dst = fr::images::Image::new(key.width, key.height, pixel_type);
     let options = fr::ResizeOptions::new()
         .resize_alg(fr::ResizeAlg::Convolution(fr::FilterType::Lanczos3))
-        // Data is already premultiplied
-        .use_alpha(false);
-    fr::Resizer::new().resize(&src, &mut dst, &options)?;
+        .use_alpha(unpremultiplied);
+    let mut resizer = fr::Resizer::new();
 
-    let texture = gdk::MemoryTexture::new(
-        width as i32,
-        height as i32,
-        format,
-        &glib::Bytes::from_owned(dst.into_vec()),
-        width as usize * bpp,
+    let path = if key.pixels.is_some() && direct.is_some() {
+        "decoder buffer"
+    } else {
+        "converted copy"
+    };
+    tracing::debug!(
+        "Resampling {:?} ({}) from {path}",
+        source.format(),
+        color_state_name(&color_state)
     );
 
-    Ok(texture.upcast())
+    match fr::images::ImageRef::new(src_width, src_height, bytes, pixel_type) {
+        Ok(src) if stride == row => resizer.resize(&src, &mut dst, &options)?,
+        _ => {
+            tracing::debug!("Repacking rows (stride {stride}, row {row})");
+            // The resizer needs tightly packed, aligned rows
+            let mut src = fr::images::Image::new(src_width, src_height, pixel_type);
+            for (y, out) in src.buffer_mut().chunks_exact_mut(row).enumerate() {
+                out.copy_from_slice(&bytes[y * stride..y * stride + row]);
+            }
+            resizer.resize(&src, &mut dst, &options)?;
+        }
+    }
+
+    let texture = gdk::MemoryTextureBuilder::new()
+        .set_bytes(Some(&glib::Bytes::from_owned(dst.into_vec())))
+        .set_width(key.width as i32)
+        .set_height(key.height as i32)
+        .set_stride(key.width as usize * pixel_type.size())
+        .set_format(format)
+        .set_color_state(&color_state)
+        .build();
+
+    Ok(texture)
+}
+
+fn color_state_name(color_state: &gdk::ColorState) -> String {
+    for (name, known) in [
+        ("sRGB", gdk::ColorState::srgb()),
+        ("sRGB linear", gdk::ColorState::srgb_linear()),
+        ("Rec.2100 PQ", gdk::ColorState::rec2100_pq()),
+        ("Rec.2100 linear", gdk::ColorState::rec2100_linear()),
+    ] {
+        if *color_state == known {
+            return name.to_string();
+        }
+    }
+    color_state
+        .create_cicp_params()
+        .map(|x| {
+            format!(
+                "CICP {}/{}/{}",
+                x.color_primaries(),
+                x.transfer_function(),
+                x.matrix_coefficients()
+            )
+        })
+        .unwrap_or_else(|| "other".to_string())
 }

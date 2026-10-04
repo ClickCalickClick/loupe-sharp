@@ -82,6 +82,7 @@ impl Glycin {
                         zoom_level: tiling::zoom_to_level(1.),
                         bleed: 0,
                         texture: frame.texture(),
+                        source: None,
                     };
 
                     tiles.push_frame(tile, dimensions, delay);
@@ -99,6 +100,7 @@ impl Glycin {
                                     zoom_level: tiling::zoom_to_level(1.),
                                     bleed: 0,
                                     texture: frame.texture(),
+                                    source: None,
                                 };
 
                                 tiles.push_frame(tile, dimensions, frame.delay().unwrap_or(delay));
@@ -118,6 +120,10 @@ impl Glycin {
                         zoom_level: tiling::zoom_to_level(1.),
                         bleed: 0,
                         texture: frame.texture(),
+                        source: Some(tiling::SourcePixels {
+                            bytes: frame.buf_bytes(),
+                            stride: frame.stride() as usize,
+                        }),
                     };
 
                     tiles.push(tile);

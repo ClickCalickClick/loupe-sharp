@@ -31,7 +31,7 @@ gettext-sys = { version = "0.26.0", features = ["gettext-system"] }
 gio = { version = "0.22.0", features = ["v2_74"] }
 glycin = { version = "3.1.0", features = ["gdk4", "unstable-config"] }
 gtk = { package = "gtk4", version = "0.11.0", features = [
-    "v4_14",
+    "v4_16",
     "xml_validation",
 ] }
 gufo = { version = "0.4.0", features = ["chrono", "all-image-formats"] }
