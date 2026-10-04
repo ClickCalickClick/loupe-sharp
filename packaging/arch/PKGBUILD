@@ -10,7 +10,7 @@ url="https://github.com/ClickCalickClick/loupe-sharp"
 license=(GPL-3.0-or-later)
 depends=(bubblewrap cairo dconf fontconfig glib2 glibc glycin graphene gtk4
          hicolor-icon-theme lcms2 libadwaita libgcc libgweather-4 libseccomp)
-makedepends=(git meson itstool appstream desktop-file-utils)
+makedepends=(cargo git meson itstool appstream desktop-file-utils)
 provides=("loupe=$pkgver")
 conflicts=(loupe)
 options=(!lto)  # Cargo profile already uses LTO
