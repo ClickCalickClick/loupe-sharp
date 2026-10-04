@@ -42,6 +42,7 @@ mod printing;
 mod rendering;
 mod rotation;
 mod scrollable;
+mod sharp;
 mod zoom;
 
 use std::cell::{Cell, OnceCell, RefCell};
@@ -182,6 +183,11 @@ mod imp {
         pub(super) previous_frame_buffer: SharedFrameBuffer,
         pub(super) decoder: RefCell<Option<Arc<Decoder>>>,
         pub(super) overwrite_dimensions: Cell<Option<(u32, u32)>>,
+
+        /// High quality render for downscaled display
+        pub(super) sharp: RefCell<Option<sharp::SharpRender>>,
+        pub(super) sharp_pending: RefCell<Option<sharp::SharpKey>>,
+        pub(super) sharp_timeout: RefCell<Option<glib::SourceId>>,
 
         /// Rotation CCW final value (can differ from `rotation` during
         /// animation)
@@ -368,6 +374,7 @@ mod imp {
 
         fn dispose(&self) {
             tracing::debug!("Disposing LpImage");
+            self.clear_sharp();
 
             // remove target from zoom animation because it's property of this object
             self.rotation_animation()

@@ -138,7 +138,9 @@ impl WidgetImpl for imp::LpImage {
                 applicable_zoom,
             );
 
-            frame_buffer.add_to_snapshot(snapshot, applicable_zoom, &render_options);
+            if !self.snapshot_sharp(snapshot, &frame_buffer, &render_options) {
+                frame_buffer.add_to_snapshot(snapshot, applicable_zoom, &render_options);
+            }
         }
 
         snapshot.restore();

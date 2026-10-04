@@ -24,6 +24,7 @@ ashpd = { version = "0.13.0", default-features = false, features = [
 async-channel = "2.1.0"
 async-lock = "3.4.0"
 cairo-rs = { version = "0.22.0", features = ["pdf"] }
+fast_image_resize = { version = "6", features = ["rayon"] }
 chrono = { version = "0.4.38", default-features = false, features = ["std"] }
 gettext-rs = { version = "0.7.0", features = ["gettext-system"] }
 gettext-sys = { version = "0.26.0", features = ["gettext-system"] }

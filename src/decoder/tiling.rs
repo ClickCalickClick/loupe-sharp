@@ -183,6 +183,32 @@ impl FrameBuffer {
             .is_some_and(|x| x.contains(zoom, coordinates))
     }
 
+    /// Full resolution texture of a static image consisting of a single tile
+    pub fn single_full_texture(&self) -> Option<gdk::Texture> {
+        if self.images.len() != 1 {
+            return None;
+        }
+
+        let image = self.images.front()?;
+        if image.tile_layers.len() != 1 {
+            return None;
+        }
+
+        let (zoom_level, layer) = image.tile_layers.iter().next()?;
+        if *zoom_level != zoom_to_level(1.) || layer.tiles.len() != 1 {
+            return None;
+        }
+
+        let tile = layer.tiles.values().next()?;
+        let (width, height) = image.original_dimensions?;
+        let complete = tile.position == (0, 0)
+            && tile.bleed == 0
+            && tile.texture.width() as u32 == width
+            && tile.texture.height() as u32 == height;
+
+        complete.then(|| tile.texture.clone())
+    }
+
     /// Returns true if there are no textures
     pub fn is_empty(&self) -> bool {
         self.images
